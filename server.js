@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { apiRouter } from './routes/api.js';
-import { stremioRouter } from './adapters/stremio.js';
+import { stremioRouter } from './stremio.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
