@@ -1,0 +1,315 @@
+
+import express from 'express';
+import cors from 'cors';
+import { createClient } from '@supabase/supabase-js';
+import { apiRouter } from './api.js';
+import { stremioRouter } from './stremio.js';
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
+
+const supabase = supabaseUrl && supabaseSecretKey
+  ? createClient(supabaseUrl, supabaseSecretKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    })
+  : null;
+
+app.disable('x-powered-by');
+app.use(cors());
+app.use(express.json({ limit: '1mb' }));
+
+app.use((req, _res, next) => {
+  req.supabase = supabase;
+  next();
+});
+
+app.get('/health', (_req, res) => {
+  res.json({
+    ok: true,
+    name: 'RedDemon',
+    version: '0.1.0',
+    databaseConfigured: Boolean(supabase)
+  });
+});
+
+app.get('/test', (_req, res) => {
+  res.type('html').send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RedDemon</title>
+<style>
+body {
+  background: #111;
+  color: white;
+  font-family: Arial, sans-serif;
+  padding: 25px;
+  max-width: 450px;
+  margin: auto;
+}
+h1 { color: #e53935; }
+input, button {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 14px;
+  margin: 9px 0;
+  border-radius: 7px;
+  font-size: 16px;
+}
+input {
+  background: #222;
+  color: white;
+  border: 1px solid #555;
+}
+button {
+  background: #c62828;
+  color: white;
+  border: 0;
+  font-weight: bold;
+}
+button:disabled { opacity: 0.5; }
+#result {
+  margin-top: 20px;
+  padding: 14px;
+  background: #222;
+  border-radius: 7px;
+  overflow-wrap: anywhere;
+}
+.section {
+  margin-top: 25px;
+  padding-top: 10px;
+  border-top: 1px solid #444;
+}
+</style>
+</head>
+<body>
+
+<h1>RedDemon</h1>
+
+<h2>Account Login</h2>
+<p>Sign in using your RedDemon email and password.</p>
+
+<form id="loginForm">
+  <input id="email" type="email"
+    placeholder="Email address" required>
+  <input id="password" type="password"
+    placeholder="Password" required>
+  <button type="submit" id="loginButton">Sign In</button>
+</form>
+
+<div class="section">
+  <h2>Connect Real-Debrid</h2>
+  <p>Sign in first, then enter your existing Real-Debrid API token.</p>
+
+  <input id="rdToken" type="password"
+    placeholder="Real-Debrid API token"
+    autocomplete="off" disabled>
+
+  <button id="saveButton" type="button" disabled>
+    Save &amp; Connect Real-Debrid
+  </button>
+
+  <button id="checkButton" type="button" disabled>
+    Check Saved Real-Debrid Account
+  </button>
+</div>
+
+<div id="result">Please sign in to RedDemon.</div>
+
+<script>
+let accessToken = '';
+
+const result = document.getElementById('result');
+const loginButton = document.getElementById('loginButton');
+const saveButton = document.getElementById('saveButton');
+const checkButton = document.getElementById('checkButton');
+const rdToken = document.getElementById('rdToken');
+
+function showMessage(message) {
+  result.textContent = message;
+}
+
+async function readResponse(response) {
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      data.message || data.error || 'Request failed.'
+    );
+  }
+
+  return data;
+}
+
+async function checkRealDebrid() {
+  if (!accessToken) {
+    showMessage('Please sign in to RedDemon first.');
+    return;
+  }
+
+  checkButton.disabled = true;
+  showMessage('Checking your saved Real-Debrid account...');
+
+  try {
+    const response = await fetch(
+      '/api/v1/provider-accounts/real_debrid/check',
+      {
+        headers: {
+          Authorization: 'Bearer ' + accessToken
+        }
+      }
+    );
+
+    const data = await readResponse(response);
+
+    showMessage(
+      'SUCCESS! Real-Debrid is connected. Account details: ' +
+      JSON.stringify(data.account || {})
+    );
+  } catch (error) {
+    showMessage('Real-Debrid check: ' + error.message);
+  } finally {
+    checkButton.disabled = false;
+  }
+}
+
+saveButton.addEventListener('click', async () => {
+  const token = rdToken.value.trim();
+
+  if (!accessToken) {
+    showMessage('Please sign in to RedDemon first.');
+    return;
+  }
+
+  if (!token) {
+    showMessage('Please enter your Real-Debrid API token.');
+    return;
+  }
+
+  saveButton.disabled = true;
+  checkButton.disabled = true;
+  showMessage('Securely saving your Real-Debrid account...');
+
+  try {
+    const response = await fetch(
+      '/api/v1/provider-accounts/real_debrid',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + accessToken
+        },
+        body: JSON.stringify({
+          accessToken: token
+        })
+      }
+    );
+
+    const data = await readResponse(response);
+
+    rdToken.value = '';
+
+    showMessage(
+      'Token saved securely. Now checking Real-Debrid...'
+    );
+
+    await checkRealDebrid();
+
+  } catch (error) {
+    showMessage('Could not connect Real-Debrid: ' + error.message);
+  } finally {
+    saveButton.disabled = false;
+    checkButton.disabled = false;
+  }
+});
+
+checkButton.addEventListener('click', checkRealDebrid);
+
+document.getElementById('loginForm').addEventListener(
+  'submit',
+  async (event) => {
+    event.preventDefault();
+
+    loginButton.disabled = true;
+    saveButton.disabled = true;
+    checkButton.disabled = true;
+    rdToken.disabled = true;
+
+    showMessage('Signing in to RedDemon...');
+
+    try {
+      const response = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: document.getElementById('email').value,
+          password: document.getElementById('password').value
+        })
+      });
+
+      const data = await readResponse(response);
+
+      if (!data.session || !data.session.access_token) {
+        throw new Error('Login did not return a session.');
+      }
+
+      accessToken = data.session.access_token;
+
+      const check = await fetch('/api/v1/me', {
+        headers: {
+          Authorization: 'Bearer ' + accessToken
+        }
+      });
+
+      const account = await readResponse(check);
+
+      if (!account.authenticated) {
+        throw new Error('RedDemon account verification failed.');
+      }
+
+      showMessage(
+        'SUCCESS! RedDemon login is working. Signed in as: ' +
+        account.user.email +
+        '. You can now connect Real-Debrid.'
+      );
+
+      rdToken.disabled = false;
+      saveButton.disabled = false;
+      checkButton.disabled = false;
+
+    } catch (error) {
+      accessToken = '';
+      showMessage('Login failed: ' + error.message);
+    } finally {
+      loginButton.disabled = false;
+    }
+  }
+);
+</script>
+
+</body>
+</html>`);
+});
+
+app.use('/api/v1', apiRouter);
+app.use('/stremio', stremioRouter);
+
+app.use((req, res) => {
+  res.status(404).json({
+    error: 'not_found',
+    path: req.path
+  });
+});
+
+app.listen(port, '0.0.0.0', () => {
+  console.log('RedDemon listening on port ' + port);
+});
