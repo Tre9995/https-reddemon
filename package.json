@@ -1,0 +1,20 @@
+
+{
+  "name": "reddemon",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RedDemon universal streaming-provider plugin API",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}
